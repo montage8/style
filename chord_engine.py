@@ -140,6 +140,48 @@ def find_nearest_chord_tone(pitch: int, chord_tones: List[int], prev_pitch: Opti
     return result
 
 
+def transform_bass_notes(
+    notes: List[Tuple[int, int, int, int]],  # (time, pitch, velocity, duration)
+    target_chord: Chord
+) -> List[Tuple[int, int, int, int]]:
+    """
+    Transform bass notes to play only the root note of the target chord.
+    
+    Bass channels should only play the chord root, not apply voice leading.
+    This maintains the lowest note at approximately the same octave as the original.
+    
+    Args:
+        notes: List of (time, pitch, velocity, duration) tuples
+        target_chord: Target chord to transform notes to
+        
+    Returns:
+        Transformed bass notes (all at chord root)
+    """
+    if not notes:
+        return []
+    
+    # Find the average octave of the original bass notes
+    avg_pitch = sum(n[1] for n in notes) / len(notes)
+    target_octave = int(avg_pitch / 12)
+    
+    # Calculate the root note in the target octave
+    root_pitch = target_octave * 12 + target_chord.root
+    
+    # Make sure it's in a reasonable bass range (E1 to C3)
+    # E1 = 28, C3 = 48
+    if root_pitch < 28:
+        root_pitch += 12
+    elif root_pitch > 48:
+        root_pitch -= 12
+    
+    # Transform all notes to the root pitch
+    transformed_notes = []
+    for time, pitch, velocity, duration in notes:
+        transformed_notes.append((time, root_pitch, velocity, duration))
+    
+    return transformed_notes
+
+
 def transform_notes_for_chord(
     notes: List[Tuple[int, int, int, int]],  # (time, pitch, velocity, duration)
     prev_voicing: Dict[int, int],  # time -> pitch mapping from previous measure

@@ -11,7 +11,7 @@ from pathlib import Path
 import mido
 
 from style_parser import read_style_file, find_section_pattern
-from chord_engine import parse_chord, transform_notes_for_chord
+from chord_engine import parse_chord, transform_notes_for_chord, transform_bass_notes
 
 
 def render_intro(
@@ -195,11 +195,21 @@ def render_intro(
         # Convert NoteEvent objects to tuples
         note_tuples = [(n.time, n.pitch, n.velocity, n.duration) for n in notes]
         
-        # For first measure, no previous voicing
-        prev_voicing = {}
-        transformed_notes, new_voicing = transform_notes_for_chord(
-            note_tuples, prev_voicing, target_chord
-        )
+        # Check if this is a bass channel - bass should only play root note
+        is_bass = False
+        if channel in pattern.channel_info:
+            is_bass = pattern.channel_info[channel].is_bass_channel()
+        
+        if is_bass:
+            # Bass channels: only play the root note of the chord
+            transformed_notes = transform_bass_notes(note_tuples, target_chord)
+            new_voicing = {}
+        else:
+            # Other channels: apply voice leading transformation
+            prev_voicing = {}
+            transformed_notes, new_voicing = transform_notes_for_chord(
+                note_tuples, prev_voicing, target_chord
+            )
         
         # Sort by time and convert to MIDI messages
         transformed_notes.sort(key=lambda n: n[0])

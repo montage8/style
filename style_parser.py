@@ -22,6 +22,20 @@ class ChannelInfo:
     pan: Optional[int] = None  # Pan (CC#10)
     reverb: Optional[int] = None  # Reverb (CC#91)
     chorus: Optional[int] = None  # Chorus (CC#93)
+    part_name: Optional[str] = None  # Part name from Ctab (e.g., "Bass", "Chord")
+    
+    def is_bass_channel(self) -> bool:
+        """Check if this is a bass channel"""
+        # Check by part name first
+        if self.part_name:
+            return 'bass' in self.part_name.lower()
+        
+        # Fallback: check by GM program number
+        # GM programs 32-39 are bass instruments
+        if self.program is not None and 32 <= self.program <= 39:
+            return True
+        
+        return False
 
 
 @dataclass
@@ -237,21 +251,40 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
     tempo = 120  # Default BPM
     time_signature = (4, 4)
     
-    # Find tracks that match the section name
+    # Find tracks that match the section name EXACTLY
     section_tracks = []
+    section_name_lower = section_name.lower().strip()
+    
     for track_idx, track in enumerate(midi.tracks):
         for msg in track:
-            if msg.type == 'track_name' and section_name.lower() in msg.name.lower():
-                section_tracks.append(track_idx)
-                break
-            elif msg.type == 'marker' and section_name.lower() in msg.text.lower():
-                section_tracks.append(track_idx)
-                break
-            elif msg.type == 'text' and section_name.lower() in msg.text.lower():
-                section_tracks.append(track_idx)
+            # Check for exact match in track name, marker, or text
+            if msg.type == 'track_name':
+                track_name = msg.name.lower().strip()
+                # Exact match or "Intro A" in "Intro A - Piano" format
+                if track_name == section_name_lower or track_name.startswith(section_name_lower + ' ') or track_name.startswith(section_name_lower + '-'):
+                    section_tracks.append(track_idx)
+                    break
+            elif msg.type == 'marker':
+                marker_text = msg.text.lower().strip()
+                if marker_text == section_name_lower:
+                    section_tracks.append(track_idx)
+                    break
+            elif msg.type == 'text':
+                text_content = msg.text.lower().strip()
+                if text_content == section_name_lower:
+                    section_tracks.append(track_idx)
+                    break
+    
+    # If no specific tracks found, try to find by checking CASM sections
+    if not section_tracks and style.chord_segments:
+        # Look for the section in CASM chord segments
+        for cseg in style.chord_segments:
+            if section_name in cseg.sections:
+                # If found in CASM but no matching track, use all tracks
+                section_tracks = list(range(1, len(midi.tracks)))
                 break
     
-    # If no specific tracks found, use all tracks (except track 0 which is often tempo/meta)
+    # Last resort: if still no tracks found, use all tracks (except track 0)
     if not section_tracks:
         section_tracks = list(range(1, len(midi.tracks)))
     
@@ -383,6 +416,21 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
                         notes_by_channel[msg.channel].append(note_event)
                         
                         max_time = max(max_time, current_time)
+    
+    # Populate part names from CASM Ctab data if available
+    if style.chord_segments:
+        for cseg in style.chord_segments:
+            # Check if this CSEG applies to the requested section
+            if section_name in cseg.sections:
+                for ctab in cseg.ctabs:
+                    if ctab.channel in channel_info:
+                        channel_info[ctab.channel].part_name = ctab.name
+                    elif ctab.channel in notes_by_channel:
+                        # Create channel info if we have notes but no info yet
+                        channel_info[ctab.channel] = ChannelInfo(
+                            channel=ctab.channel,
+                            part_name=ctab.name
+                        )
     
     # Determine pattern length (default to 4 bars in 4/4)
     length_ticks = max_time if max_time > 0 else ticks_per_beat * time_signature[0] * 4
