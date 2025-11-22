@@ -211,7 +211,7 @@ def render_intro(
 
 
 def interactive_mode():
-    """Interactive mode with step-by-step prompts in Korean"""
+    """Interactive mode with step-by-step prompts in Korean and English"""
     print("=" * 60)
     print("야마하 스타일 파일 인트로 렌더러")
     print("Yamaha Style File Intro Renderer")
