@@ -7,7 +7,7 @@
 3. CASM 설정대로 따라가게 만들기
 4. 리보이싱도 CASM 안에 설정대로 흘러가도록
 
-## 완료된 작업 (3 commits)
+## 완료된 작업 (5 commits)
 
 ### Commit 1-2: CASM 파서 및 해석기 (a2d1de8, 3fe17b8)
 ✅ **Ctab 완전 파싱**
@@ -53,6 +53,27 @@ get_ctab_for_channel()     # 채널별 Ctab 찾기
 - 기술 세부사항 (바이트 맵, NTR 모드)
 - 다음 단계
 
+### Commit 4-5: NTT 프레임워크 (a7c9e3c, ea99128)
+✅ **확장된 코드 타입 지원**
+- 18가지 코드 타입 (이전 11개)
+- Major, Minor, 7th, Dim, Aug, Sus4, Sus2, 6th, 9th 등
+
+✅ **NTT 프레임워크 구현**
+```python
+parse_ntt_table()        # Cntt 바이트 파싱 (구조만, 실제 파싱 대기)
+apply_ntt_transformation()  # 코드별 노트 변환
+get_ntt_table_for_ctab()   # ChordSegment에서 NTT 테이블 추출
+```
+
+✅ **파이프라인 통합**
+- apply_casm_transposition(): NTT 우선 시도, 없으면 NTR 사용
+- transpose_pattern_with_casm(): NTT 테이블 전달
+- intro_renderer.py: NTT 테이블 가져오기 및 사용
+
+✅ **CURRENT_STATUS.md 생성**
+- 진행 상황 요약
+- 다음 단계 설명
+
 ## 현재 작동 방식
 
 ```
@@ -60,12 +81,16 @@ get_ctab_for_channel()     # 채널별 Ctab 찾기
         ↓
 1. 섹션의 각 채널에 대한 Ctab 찾기
         ↓
-2. 각 Ctab의 NTR 모드 확인
+2. 각 Ctab의 NTR 모드 및 NTT 인덱스 확인
         ↓
-3. NTR 규칙 적용:
-   - Root Trans: 원본 → +7 semitone (C→G)
-   - Root Fixed: 음역 내에서 유지
-   - Bypass: 변환 없음
+3a. NTT 테이블이 있으면:
+    - NTT 테이블에서 노트 매핑 찾기
+    - 코드 타입별 변환 적용
+        ↓
+3b. NTT 없으면 NTR 규칙 적용:
+    - Root Trans: 원본 → +7 semitone (C→G)
+    - Root Fixed: 음역 내에서 유지
+    - Bypass: 변환 없음
         ↓
 4. 음역 제한 적용 (Note Low/High)
         ↓
@@ -86,24 +111,45 @@ $ python3 intro_renderer.py --style demo_style.mid --section "Intro A" --chord G
 
 ## 남은 작업 (Next Steps)
 
-### 우선순위 1: NTT 테이블 해석 ⭐⭐⭐
-현재 NTR만 구현됨. NTT는 더 복잡한 코드별 노트 매핑 제공.
+### 우선순위 1: NTT 바이트 형식 분석 및 파싱 구현 ⭐⭐⭐
+
+**현재 상태**:
+- ✅ NTT 프레임워크 완성 (함수 구조, 통합)
+- ⏳ `parse_ntt_table()` 실제 파싱 미구현
+- ✅ 폴백 동작 완료 (NTT 없으면 NTR 사용)
 
 **필요한 작업**:
-1. Cntt 바이트 구조 파싱
-   - 12개 노트 × 34개 코드 타입 매핑 테이블
-2. NTT 인덱스로 적절한 테이블 선택
-3. 코드 타입에 따른 노트 매핑 적용
+1. **실제 .sty 파일 분석**
+   - 여러 Yamaha 키보드 모델의 스타일 파일 수집
+   - Cntt 청크의 바이트 구조 분석
+   - 파일 버전별 차이점 파악
 
-**예시**:
-```
-NTT 테이블 0 (Bypass):
-  C → C, C# → C#, ... (변환 없음)
+2. **Cntt 바이트 구조 파싱**
+   - 12개 노트 × 34개 코드 타입 매핑 테이블 추출
+   - 각 바이트의 의미 해석 (절대값 vs 상대값)
+   - 옥타브 정보 처리
 
-NTT 테이블 1 (Melodic Minor):
-  C Major:  C→C, D→D, E→E, ...
-  C Minor:  C→C, D→D, Eb→Eb, ...
+3. **NTT 테이블 적용**
+   - 코드 타입에 따른 노트 매핑 적용
+   - 옥타브 보정
+   - 음역 제한 처리
+
+**예상 결과**:
+```python
+# 파싱된 NTT 테이블 예시
+ntt_table = [
+    # C 노트에 대한 34가지 코드 타입별 매핑
+    [0, 0, 0, 0, 0, ...],  # C → C (Major), C (Minor), etc.
+    # C# 노트
+    [1, 0, 1, 0, 1, ...],  # C# → C# or C depending on chord
+    # ... 12개 노트
+]
 ```
+
+**테스트 방법**:
+- 실제 .sty 파일로 테스트
+- Yamaha 키보드 출력과 비교
+- 다양한 코드 타입 (Major, Minor, 7th, Dim 등) 검증
 
 ### 우선순위 2: 실제 스타일 파일 테스트 ⭐⭐
 .sty 파일로 검증 필요:
@@ -138,9 +184,12 @@ NTT 테이블 1 (Melodic Minor):
 
 ✅ CASM 바이너리 구조 완전 파싱
 ✅ NTR 모드 3개 구현 (Root Trans, Root Fixed, Bypass)
+✅ NTT 프레임워크 완성 (파싱 함수, 변환 로직, 파이프라인 통합)
 ✅ 채널별 CASM 규칙 적용
 ✅ 야마하 키보드 시뮬레이션 (루트 음만)
-✅ 폴백 모드 (CASM 없을 때)
+✅ 폴백 모드 (CASM 없을 때 / NTT 없을 때)
+✅ 18가지 코드 타입 지원
+⏳ NTT 바이트 파싱 (실제 .sty 파일 분석 필요)
 
 ## 참고 자료
 
@@ -150,11 +199,19 @@ NTT 테이블 1 (Melodic Minor):
 
 ## 결론
 
-**핵심 아키텍처는 완성**되었습니다:
+**핵심 아키텍처 및 NTT 프레임워크 완성**:
 - ✅ CASM 파싱
 - ✅ NTR 기반 변환
+- ✅ NTT 프레임워크 (함수 구조, 통합)
 - ✅ 야마하 키보드 시뮬레이션
+- ✅ 18가지 코드 타입 지원
 
-**다음 단계**는 **NTT 테이블 해석**으로, 더 정교한 코드별 변환을 가능하게 합니다.
+**다음 단계**는 **실제 .sty 파일 분석 및 NTT 바이트 파싱 구현**입니다.
 
-실제 .sty 파일로 테스트하면 현재 구현이 얼마나 잘 작동하는지 확인 가능합니다.
+이를 위해서는:
+1. 다양한 Yamaha 키보드 모델의 실제 .sty 파일 필요
+2. Cntt 청크의 바이트 구조 분석
+3. `parse_ntt_table()` 함수 완성
+
+실제 .sty 파일로 테스트하면 현재 NTR 기반 구현이 얼마나 잘 작동하는지 확인 가능하며,
+NTT 파싱이 완료되면 더욱 정교한 코드별 변환이 가능해집니다.
