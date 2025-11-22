@@ -212,11 +212,14 @@ def render_intro(
                     chord_segment = cseg
                     break
         
+        # ALWAYS use CASM transposition if Ctab is available
+        # This ensures proper revoicing for ALL channels, not just bass
         if ctab and chord_segment:
             # Try to get NTT table for this Ctab
             ntt_table = get_ntt_table_for_ctab(chord_segment, ctab)
             
             # Use CASM transposition (with NTT if available)
+            # Source chord is CMaj (0), not CMaj7 (11)
             transformed_notes = transpose_pattern_with_casm(
                 note_tuples,
                 ctab,

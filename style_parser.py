@@ -348,42 +348,24 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
     tempo = 120  # Default BPM
     time_signature = (4, 4)
     
-    # Find tracks that match the section name EXACTLY
-    section_tracks = []
-    section_name_lower = section_name.lower().strip()
-    
-    for track_idx, track in enumerate(midi.tracks):
-        for msg in track:
-            # Check for exact match in track name, marker, or text
-            if msg.type == 'track_name':
-                track_name = msg.name.lower().strip()
-                # Exact match or "Intro A" in "Intro A - Piano" format
-                if track_name == section_name_lower or track_name.startswith(section_name_lower + ' ') or track_name.startswith(section_name_lower + '-'):
-                    section_tracks.append(track_idx)
-                    break
-            elif msg.type == 'marker':
-                marker_text = msg.text.lower().strip()
-                if marker_text == section_name_lower:
-                    section_tracks.append(track_idx)
-                    break
-            elif msg.type == 'text':
-                text_content = msg.text.lower().strip()
-                if text_content == section_name_lower:
-                    section_tracks.append(track_idx)
-                    break
-    
-    # If no specific tracks found, try to find by checking CASM sections
-    if not section_tracks and style.chord_segments:
-        # Look for the section in CASM chord segments
+    # Check if section exists in CASM - this is the authoritative source
+    section_found_in_casm = False
+    if style.chord_segments:
         for cseg in style.chord_segments:
+            # Exact match in CASM sections
             if section_name in cseg.sections:
-                # If found in CASM but no matching track, use all tracks
-                section_tracks = list(range(1, len(midi.tracks)))
+                section_found_in_casm = True
                 break
     
-    # Last resort: if still no tracks found, use all tracks (except track 0)
-    if not section_tracks:
-        section_tracks = list(range(1, len(midi.tracks)))
+    # If section not in CASM, this section doesn't exist in the style file
+    if not section_found_in_casm:
+        # Still try track-based matching as fallback
+        pass
+    
+    # For Yamaha style files, ALL tracks can contain notes for ANY section
+    # The section is defined by time ranges, not by which tracks are present
+    # So we use all tracks (except tempo track 0) and filter by time/content later
+    section_tracks = list(range(1, len(midi.tracks)))
     
     # Parse note events and channel info from relevant tracks
     notes_by_channel: Dict[int, List[NoteEvent]] = {}
