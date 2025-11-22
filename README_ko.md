@@ -2,7 +2,9 @@
 
 ## 개요
 
-이 프로젝트는 야마하 SFF1 스타일 파일을 파싱하고, 인트로 섹션을 사용자 지정 코드로 변환하여 MIDI 파일로 렌더링하는 Python 기반 도구입니다.
+이 프로젝트는 야마하 SFF1 스타일 파일을 파싱하고, **CASM (Chord Arrangement Section Management) 규칙**을 완전히 해석하여 인트로 섹션을 사용자 지정 코드로 변환, MIDI 파일로 렌더링하는 Python 기반 도구입니다.
+
+**⚠️ 현재 개발 중**: CASM 완전 해석 구현 진행 중입니다. 기본 NTR 모드는 작동하며, NTT 테이블 해석은 다음 단계입니다.
 
 ## 구현 완료 사항
 
@@ -11,30 +13,41 @@
 1. **style_parser.py** - 스타일 파일 파서
    - SFF1 파일 읽기 및 파싱
    - CASM (Chord and Section Management) 청크 추출
-   - Sdec, Ctab, Cntt 서브청크 파싱
+   - Ctab 완전 파싱: NTR, NTT, Bass NTT, Source Root/Chord, 음역 제한
+   - Cntt (Note Transposition Table) 추출
    - 섹션 패턴 추출 (Intro A/B/C, Main 등)
 
-2. **chord_engine.py** - 코드 엔진
+2. **casm_interpreter.py** - CASM 해석기 (신규!)
+   - NTR (Note Transposition Rule) 모드 구현:
+     - Root Trans: 멜로디 채널용 인터벌 변환
+     - Root Fixed: 베이스/코드 채널용 음역 내 변환
+     - Bypass: 변환 없음 (드럼)
+   - 채널별 Ctab 매칭
+   - 코드 타입별 변환 (Major, Minor, 7th, Dim, Aug, Sus 등)
+
+3. **chord_engine.py** - 코드 엔진
    - 코드 파싱 (C, F#, Eb 등)
    - 코드 톤 생성 (장조/단조)
-   - 보이스 리딩 알고리즘
-   - 음역 제약 (A2~F4)
 
-3. **intro_renderer.py** - CLI 렌더러
+4. **intro_renderer.py** - CLI 렌더러
+   - **CASM 규칙 기반 렌더링** (신규 아키텍처!)
    - 인트로 섹션 렌더링
-   - 코드 변환 적용
+   - 코드 입력 → 루트 음만 시뮬레이션
+   - CASM이 모든 채널 자동 변환
    - MIDI 파일 생성
-   - 명령줄 인터페이스
+   - 대화형 및 명령줄 인터페이스
 
 ### 지원 기능
 
 - ✅ SFF1 스타일 파일 파싱 (.sty, .prs)
 - ✅ 표준 MIDI 파일도 처리 가능
+- ✅ **CASM 완전 파싱** - Ctab, Cntt 구조 추출
+- ✅ **CASM 기반 변환** - NTR Root Trans/Fixed 구현
+- ✅ **야마하 키보드 시뮬레이션** - 루트 음만 입력, CASM이 변환
 - ✅ **악기/보이스 보존** - Program Change 및 Bank Select 지원
 - ✅ **채널 설정 유지** - Volume, Pan, Reverb, Chorus 보존
-- ✅ 섹션 자동 감지 (Intro A, Intro B, Main A 등)
+- ✅ 섹션 정확 매칭 (Intro C → Intro C만, Main C 제외)
 - ✅ 장조/단조 코드 변환
-- ✅ 보이스 리딩 알고리즘으로 부드러운 화성 진행
 - ✅ **대화형 모드** - 단계별 한글/영문 안내
 - ✅ 스크린 리더 친화적인 CLI 인터페이스
 - ✅ 명령줄 모드로 스크립팅/자동화 지원
@@ -108,8 +121,24 @@ python intro_renderer.py --style mystyle.sty --section "Intro C" --chord "F#" --
 - **CASM**: 코드 및 섹션 관리 청크
   - **CSEG**: 코드 세그먼트
   - **Sdec**: 섹션 선언 (예: "Intro A", "Main A")
-  - **Ctab**: 채널 테이블 (악기 할당)
+  - **Ctab**: 채널 테이블 - NTR, NTT, Source Root/Chord 등
   - **Cntt**: 노트 트랜스포즈 테이블
+
+### CASM 해석 (신규!)
+
+프로그램은 이제 CASM 규칙을 해석하여 야마하 키보드처럼 작동합니다:
+
+**NTR (Note Transposition Rule) 모드**:
+- **Root Trans (0)**: 멜로디 채널 - 인터벌 유지하며 이동
+- **Root Fixed (1)**: 베이스/코드 채널 - 음역 내에서 유지
+- **Bypass (3)**: 드럼 - 변환 없음
+
+**작동 방식**:
+1. 사용자가 "G Major" 입력
+2. 프로그램이 G 루트 음만 시뮬레이션 (야마하 키보드처럼)
+3. 각 채널의 Ctab에서 NTR 모드 확인
+4. NTR 규칙에 따라 노트 변환
+5. 원래 스타일과 동일한 사운드 출력
 
 ### 악기 및 보이스 처리
 
@@ -121,20 +150,26 @@ python intro_renderer.py --style mystyle.sty --section "Intro C" --chord "F#" --
 
 이를 통해 렌더링된 MIDI 파일이 올바른 악기와 이펙트로 원래 야마하 스타일처럼 들립니다.
 
-### 보이스 리딩 알고리즘
-
-보이스 리딩 알고리즘은 다음과 같이 작동합니다:
-1. 타겟 코드의 코드 톤 식별
-2. 각 노트를 가장 가까운 코드 톤에 매핑
-3. 이전 보이싱을 고려하여 보이스 이동 최소화
-4. 지정된 범위(기본값: A2~F4) 내에서 노트 유지
-
 ## 현재 버전의 제한사항
 
-- 메이저/마이너 코드만 지원 (7화음, sus, dim 등 미지원)
+### 구현 완료:
+- ✅ Ctab 완전 파싱 (NTR, NTT, Source Root/Chord 등)
+- ✅ NTR Root Trans/Fixed 모드
+- ✅ 채널별 CASM 규칙 적용
+- ✅ 메이저/마이너 및 11개 코드 타입
+- ✅ 섹션 정확 매칭
+
+### 진행 중:
+- ⏳ **NTT 테이블 해석** (다음 우선순위)
+- ⏳ Guitar NTR 모드
+- ⏳ On-Bass 코드 (slash chords)
+- ⏳ 확장 코드 타입 (34+ 야마하 타입)
+
+### 기타 제한사항:
 - 한 번에 하나의 인트로 섹션만 처리
 - 오프라인 MIDI 생성만 가능 (실시간 재생 없음)
-- 기본 보이스 리딩 (향후 버전에서 개선 예정)
+
+자세한 내용은 `CASM_IMPLEMENTATION.md` 참조.
 
 ## 향후 개선 계획
 
