@@ -13,7 +13,7 @@ import mido
 from style_parser import read_style_file, find_section_pattern
 from chord_engine import parse_chord
 from casm_interpreter import (
-    transpose_pattern_with_casm, get_ctab_for_channel,
+    transpose_pattern_with_casm, get_ctab_for_channel, get_ntt_table_for_ctab,
     CHORD_MAJOR, CHORD_MINOR
 )
 
@@ -204,19 +204,25 @@ def render_intro(
         
         # Try to use CASM Ctab if available
         ctab = None
+        chord_segment = None
         if style.chord_segments:
             for cseg in style.chord_segments:
                 if section_name in cseg.sections:
                     ctab = get_ctab_for_channel(cseg, channel)
+                    chord_segment = cseg
                     break
         
-        if ctab:
-            # Use CASM transposition
+        if ctab and chord_segment:
+            # Try to get NTT table for this Ctab
+            ntt_table = get_ntt_table_for_ctab(chord_segment, ctab)
+            
+            # Use CASM transposition (with NTT if available)
             transformed_notes = transpose_pattern_with_casm(
                 note_tuples,
                 ctab,
                 target_chord.root,
-                target_chord_type
+                target_chord_type,
+                ntt_table
             )
         else:
             # Fallback: simple transposition (no CASM data available)
