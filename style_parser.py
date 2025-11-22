@@ -334,6 +334,9 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
     """
     Find and extract MIDI pattern for a specific section (e.g., "Intro A").
     
+    This function now PROPERLY filters by section markers in the MIDI file.
+    Yamaha style files contain markers that define section boundaries.
+    
     Args:
         style: Parsed Style object
         section_name: Name of the section to find (e.g., "Intro A", "Main A")
@@ -359,15 +362,61 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
     
     # If section not in CASM, this section doesn't exist in the style file
     if not section_found_in_casm:
-        # Still try track-based matching as fallback
-        pass
+        raise ValueError(f"Section '{section_name}' not found in CASM data")
     
-    # For Yamaha style files, ALL tracks can contain notes for ANY section
-    # The section is defined by time ranges, not by which tracks are present
-    # So we use all tracks (except tempo track 0) and filter by time/content later
+    # STEP 1: Find section boundaries by parsing MIDI markers
+    # Yamaha style files use marker/text events to denote sections
+    section_start_time = None
+    section_end_time = None
+    
+    for track in midi.tracks:
+        current_time = 0
+        for msg in track:
+            current_time += msg.time
+            
+            # Look for section markers (track_name, marker, or text events)
+            if hasattr(msg, 'name'):
+                marker_text = msg.name
+            elif hasattr(msg, 'text'):
+                marker_text = msg.text
+            else:
+                continue
+            
+            # Check if this marker matches our section
+            # Support variations like "Intro A", "IntroA", "Intro A - Piano", etc.
+            marker_normalized = marker_text.strip().replace(' ', '').lower()
+            section_normalized = section_name.strip().replace(' ', '').lower()
+            
+            if marker_normalized.startswith(section_normalized) or marker_normalized == section_normalized:
+                if section_start_time is None:
+                    section_start_time = current_time
+                    print(f"DEBUG: Found section '{section_name}' marker at time {current_time}")
+            elif section_start_time is not None and section_end_time is None:
+                # We found a different section marker after ours, so this is the end
+                section_end_time = current_time
+                print(f"DEBUG: Section '{section_name}' ends at time {current_time}")
+                break
+    
+    # If we didn't find explicit markers, use the whole file (fallback)
+    if section_start_time is None:
+        section_start_time = 0
+        print(f"DEBUG: No marker found for '{section_name}', using time 0")
+    
+    # If no end marker, use max time from all notes
+    if section_end_time is None:
+        # Calculate max time from all tracks
+        max_time = 0
+        for track in midi.tracks:
+            track_time = sum(msg.time for msg in track)
+            max_time = max(max_time, track_time)
+        section_end_time = max_time
+        print(f"DEBUG: No end marker, using max time {section_end_time}")
+    
+    # STEP 2: Extract notes ONLY within the section time range
     section_tracks = list(range(1, len(midi.tracks)))
     
     # Parse note events and channel info from relevant tracks
+    # IMPORTANT: Only extract notes that fall within [section_start_time, section_end_time)
     notes_by_channel: Dict[int, List[NoteEvent]] = {}
     channel_info: Dict[int, ChannelInfo] = {}
     max_time = 0
@@ -388,13 +437,13 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
             elif msg.type == 'time_signature':
                 time_signature = (msg.numerator, msg.denominator)
             
-            # Capture program change
+            # Capture program change (always capture, regardless of time)
             elif msg.type == 'program_change':
                 if msg.channel not in channel_info:
                     channel_info[msg.channel] = ChannelInfo(channel=msg.channel)
                 channel_info[msg.channel].program = msg.program
             
-            # Capture control changes (Bank Select MSB/LSB, Volume, Pan, etc.)
+            # Capture control changes (always capture, regardless of time)
             elif msg.type == 'control_change':
                 if msg.channel not in channel_info:
                     channel_info[msg.channel] = ChannelInfo(channel=msg.channel)
@@ -412,78 +461,23 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
                 elif msg.control == 93:  # Chorus
                     channel_info[msg.channel].chorus = msg.value
             
-            # Note on
+            # Note on - FILTER BY TIME RANGE
             elif msg.type == 'note_on' and msg.velocity > 0:
-                key = (msg.channel, msg.note)
-                active_notes[key] = (current_time, msg.velocity)
+                if section_start_time <= current_time < section_end_time:
+                    key = (msg.channel, msg.note)
+                    active_notes[key] = (current_time, msg.velocity)
             
-            # Note off (or note_on with velocity 0)
+            # Note off - FILTER BY TIME RANGE
             elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
                 key = (msg.channel, msg.note)
                 if key in active_notes:
                     start_time, note_velocity = active_notes.pop(key)
                     duration = current_time - start_time
                     
-                    note_event = NoteEvent(
-                        time=start_time,
-                        pitch=msg.note,
-                        velocity=note_velocity,
-                        duration=duration,
-                        channel=msg.channel
-                    )
-                    
-                    if msg.channel not in notes_by_channel:
-                        notes_by_channel[msg.channel] = []
-                    notes_by_channel[msg.channel].append(note_event)
-                    
-                    max_time = max(max_time, current_time)
-    
-    # If no notes found, try a different approach - parse all tracks
-    if not notes_by_channel:
-        for track in midi.tracks:
-            current_time = 0
-            active_notes: Dict[Tuple[int, int], Tuple[int, int]] = {}  # (channel, pitch) -> (start_time, velocity)
-            
-            for msg in track:
-                current_time += msg.time
-                
-                if msg.type == 'set_tempo':
-                    tempo = mido.tempo2bpm(msg.tempo)
-                elif msg.type == 'time_signature':
-                    time_signature = (msg.numerator, msg.denominator)
-                # Capture program change
-                elif msg.type == 'program_change':
-                    if msg.channel not in channel_info:
-                        channel_info[msg.channel] = ChannelInfo(channel=msg.channel)
-                    channel_info[msg.channel].program = msg.program
-                # Capture control changes
-                elif msg.type == 'control_change':
-                    if msg.channel not in channel_info:
-                        channel_info[msg.channel] = ChannelInfo(channel=msg.channel)
-                    
-                    if msg.control == 0:  # Bank Select MSB
-                        channel_info[msg.channel].bank_msb = msg.value
-                    elif msg.control == 32:  # Bank Select LSB
-                        channel_info[msg.channel].bank_lsb = msg.value
-                    elif msg.control == 7:  # Volume
-                        channel_info[msg.channel].volume = msg.value
-                    elif msg.control == 10:  # Pan
-                        channel_info[msg.channel].pan = msg.value
-                    elif msg.control == 91:  # Reverb
-                        channel_info[msg.channel].reverb = msg.value
-                    elif msg.control == 93:  # Chorus
-                        channel_info[msg.channel].chorus = msg.value
-                elif msg.type == 'note_on' and msg.velocity > 0:
-                    key = (msg.channel, msg.note)
-                    active_notes[key] = (current_time, msg.velocity)
-                elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
-                    key = (msg.channel, msg.note)
-                    if key in active_notes:
-                        start_time, note_velocity = active_notes.pop(key)
-                        duration = current_time - start_time
-                        
+                    # Only include notes that START within the section time range
+                    if section_start_time <= start_time < section_end_time:
                         note_event = NoteEvent(
-                            time=start_time,
+                            time=start_time - section_start_time,  # Normalize to section start
                             pitch=msg.note,
                             velocity=note_velocity,
                             duration=duration,
@@ -494,7 +488,10 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
                             notes_by_channel[msg.channel] = []
                         notes_by_channel[msg.channel].append(note_event)
                         
-                        max_time = max(max_time, current_time)
+                        max_time = max(max_time, start_time - section_start_time + duration)
+    
+    # Length is the section duration
+    section_length = section_end_time - section_start_time if section_end_time > section_start_time else max_time
     
     # Populate part names from CASM Ctab data if available
     if style.chord_segments:
@@ -511,12 +508,17 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
                             part_name=ctab.name
                         )
     
-    # Determine pattern length (default to 4 bars in 4/4)
-    length_ticks = max_time if max_time > 0 else ticks_per_beat * time_signature[0] * 4
+    # Use the calculated section length
+    if section_length <= 0:
+        # Fallback to 4 bars if we couldn't determine length
+        section_length = ticks_per_beat * time_signature[0] * 4
+    
+    print(f"DEBUG: Extracted {sum(len(notes) for notes in notes_by_channel.values())} notes from section '{section_name}'")
+    print(f"DEBUG: Section length: {section_length} ticks ({section_length / ticks_per_beat} beats)")
     
     return IntroPattern(
         ticks_per_beat=ticks_per_beat,
-        length_ticks=length_ticks,
+        length_ticks=section_length,
         tempo=int(tempo),
         time_signature=time_signature,
         notes_by_channel=notes_by_channel,
