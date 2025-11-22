@@ -5,7 +5,7 @@ This module provides functionality to parse Yamaha SFF1 style files,
 extracting CASM (Chord and Section Management) information and MIDI patterns.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
 import struct
 import mido
@@ -248,7 +248,7 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
     for track_idx in section_tracks:
         track = midi.tracks[track_idx]
         current_time = 0
-        active_notes: Dict[Tuple[int, int], int] = {}  # (channel, pitch) -> start_time
+        active_notes: Dict[Tuple[int, int], Tuple[int, int]] = {}  # (channel, pitch) -> (start_time, velocity)
         
         for msg in track:
             current_time += msg.time
@@ -264,19 +264,19 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
             # Note on
             elif msg.type == 'note_on' and msg.velocity > 0:
                 key = (msg.channel, msg.note)
-                active_notes[key] = current_time
+                active_notes[key] = (current_time, msg.velocity)
             
             # Note off (or note_on with velocity 0)
             elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
                 key = (msg.channel, msg.note)
                 if key in active_notes:
-                    start_time = active_notes.pop(key)
+                    start_time, note_velocity = active_notes.pop(key)
                     duration = current_time - start_time
                     
                     note_event = NoteEvent(
                         time=start_time,
                         pitch=msg.note,
-                        velocity=msg.velocity if msg.type == 'note_off' else 64,
+                        velocity=note_velocity,
                         duration=duration,
                         channel=msg.channel
                     )
@@ -291,7 +291,7 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
     if not notes_by_channel:
         for track in midi.tracks:
             current_time = 0
-            active_notes: Dict[Tuple[int, int], int] = {}
+            active_notes: Dict[Tuple[int, int], Tuple[int, int]] = {}  # (channel, pitch) -> (start_time, velocity)
             
             for msg in track:
                 current_time += msg.time
@@ -302,19 +302,12 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
                     time_signature = (msg.numerator, msg.denominator)
                 elif msg.type == 'note_on' and msg.velocity > 0:
                     key = (msg.channel, msg.note)
-                    active_notes[key] = current_time
+                    active_notes[key] = (current_time, msg.velocity)
                 elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
                     key = (msg.channel, msg.note)
                     if key in active_notes:
-                        start_time = active_notes.pop(key)
+                        start_time, note_velocity = active_notes.pop(key)
                         duration = current_time - start_time
-                        
-                        # Get actual velocity from note_on event
-                        note_velocity = 64  # default
-                        for m in track:
-                            if m.type == 'note_on' and m.note == msg.note:
-                                note_velocity = m.velocity
-                                break
                         
                         note_event = NoteEvent(
                             time=start_time,
