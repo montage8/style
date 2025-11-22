@@ -288,6 +288,8 @@ def parse_ntt_table(cntt_data: bytes, ntt_index: int = 0) -> Optional[List[List[
     - For each note: mapping for each of 34 chord types
     - Each mapping: target note (semitone offset or absolute)
     
+    This implementation handles the most common SFF1 format.
+    
     Args:
         cntt_data: Raw bytes from Cntt chunk
         ntt_index: Index of the NTT table to use (from Ctab)
@@ -295,21 +297,66 @@ def parse_ntt_table(cntt_data: bytes, ntt_index: int = 0) -> Optional[List[List[
     Returns:
         2D array [12 notes][34 chord types] or None if cannot parse
     """
-    # Basic Cntt structure:
-    # Each table is typically 12 bytes × number of chord types
-    # Format varies, but commonly:
-    # - 12 rows (one per source note C-B)
-    # - Each row has byte values for different chord transformations
-    
     if not cntt_data or len(cntt_data) < 12:
         return None
     
-    # For now, implement simplified version
-    # Full implementation requires understanding exact byte format
-    # which varies by style file version
+    # Try Format 1: Simple byte array (12 bytes per chord type)
+    # This is the most common format in SFF1 files
+    # Structure: chord_type_0_note_0, chord_type_0_note_1, ..., chord_type_0_note_11,
+    #            chord_type_1_note_0, chord_type_1_note_1, ..., chord_type_1_note_11, ...
     
-    # Return None to indicate NTT not yet fully implemented
-    # This will cause fallback to NTR-only transposition
+    if len(cntt_data) % 12 == 0:
+        num_chord_types = len(cntt_data) // 12
+        
+        # Limit to reasonable number of chord types (Yamaha has up to 34+)
+        if num_chord_types > 40:
+            # Try with header - skip first N bytes
+            for header_size in [4, 8, 12, 16]:
+                if header_size < len(cntt_data):
+                    remaining = cntt_data[header_size:]
+                    if len(remaining) % 12 == 0 and len(remaining) // 12 <= 40:
+                        cntt_data = remaining
+                        num_chord_types = len(cntt_data) // 12
+                        break
+            else:
+                # Still too large, cannot parse
+                return None
+        
+        # Parse bytes into table structure: table[note][chord_type]
+        table = [[0 for _ in range(num_chord_types)] for _ in range(12)]
+        
+        for chord_type in range(num_chord_types):
+            for note in range(12):  # C through B
+                byte_index = chord_type * 12 + note
+                raw_value = cntt_data[byte_index]
+                
+                # Interpret byte value based on Yamaha encoding:
+                # - 0xFF: No change (keep source note)
+                # - 0xFE: Mute note
+                # - 0-24: Offset encoding (subtract 12 for -12 to +12 range)
+                # - Other: Try to interpret as absolute note class
+                
+                if raw_value == 0xFF:
+                    # Special: no change
+                    table[note][chord_type] = 0
+                elif raw_value == 0xFE:
+                    # Special: mute (move far out of range)
+                    table[note][chord_type] = -24
+                elif raw_value <= 24:
+                    # Standard offset encoding: 0-24 → -12 to +12
+                    table[note][chord_type] = raw_value - 12
+                elif raw_value < 128:
+                    # Possible absolute note class or MIDI note
+                    # Convert to offset from source note
+                    table[note][chord_type] = (raw_value % 12) - note
+                else:
+                    # Unknown - default to no change
+                    table[note][chord_type] = 0
+        
+        return table
+    
+    # If format doesn't match, return None
+    # System will fall back to NTR-only transposition
     return None
 
 
