@@ -43,10 +43,28 @@ class Ctab:
     """Represents a Ctab (Channel Table) entry in CASM"""
     name: str
     channel: int
-    raw_params: bytes
+    ntr: int = 0  # Note Transposition Rule (0=Root Trans, 1=Root Fixed, 2=Guitar, etc.)
+    ntt: int = 0  # Note Transposition Table index
+    bass_ntt: int = 0  # Bass Note Transposition Table
+    source_root: int = 0  # Source root note (0=C, 1=C#, etc.)
+    source_chord: int = 0  # Source chord type
+    high_key: int = 127  # High key limit
+    note_low: int = 0  # Note low limit
+    note_high: int = 127  # Note high limit
+    retrigger_rule: int = 0  # Retrigger rule
+    raw_params: bytes = b''  # Raw parameter bytes for debugging
     
     def __repr__(self):
-        return f"Ctab(name='{self.name}', channel={self.channel})"
+        return f"Ctab(name='{self.name}', ch={self.channel}, NTR={self.ntr}, NTT={self.ntt})"
+
+
+@dataclass
+class Cntt:
+    """Represents a Cntt (Chord Note Transposition Table) entry in CASM"""
+    table_data: bytes  # Raw table data (note mappings for different chord types)
+    
+    def __repr__(self):
+        return f"Cntt(size={len(self.table_data)})"
 
 
 @dataclass
@@ -54,9 +72,14 @@ class ChordSegment:
     """Represents a CSEG (Chord Segment) in CASM"""
     sections: List[str]  # List of section names from Sdec
     ctabs: List[Ctab]
+    cntts: List[Cntt] = None  # Note transposition tables
+    
+    def __post_init__(self):
+        if self.cntts is None:
+            self.cntts = []
     
     def __repr__(self):
-        return f"ChordSegment(sections={self.sections}, ctabs={len(self.ctabs)})"
+        return f"ChordSegment(sections={self.sections}, ctabs={len(self.ctabs)}, cntts={len(self.cntts)})"
 
 
 @dataclass
@@ -178,6 +201,7 @@ def parse_cseg(cseg_data: bytes) -> Optional[ChordSegment]:
     """
     sections = []
     ctabs = []
+    cntts = []
     
     pos = 0
     while pos < len(cseg_data) - 4:
@@ -195,40 +219,67 @@ def parse_cseg(cseg_data: bytes) -> Optional[ChordSegment]:
             pos += 8 + sdec_length
             
         elif chunk_type == b'Ctab':
-            # Channel table - parse channel assignment
+            # Channel table - parse channel assignment and CASM parameters
             ctab_length = struct.unpack('>I', cseg_data[pos + 4:pos + 8])[0]
             ctab_data = cseg_data[pos + 8:pos + 8 + ctab_length]
             
             if len(ctab_data) >= 10:
-                # First byte appears to be Ctab ID
-                # Next 8 bytes are the name (ASCII, space-padded)
+                # Byte 0: Ctab ID
+                ctab_id = ctab_data[0]
+                
+                # Bytes 1-8: Name (ASCII, space-padded)
                 name = ctab_data[1:9].decode('ascii', errors='ignore').rstrip()
                 
-                # Next byte(s) contain channel assignment
-                # Channel is often at position 9 (0-indexed)
-                channel = ctab_data[9] if len(ctab_data) > 9 else 0
+                # Byte 9: Source Channel (MIDI channel 1-16, stored as 0-15)
+                source_channel = ctab_data[9] if len(ctab_data) > 9 else 0
                 
-                # Store remaining params
-                raw_params = ctab_data[10:] if len(ctab_data) > 10 else b''
+                # Parse CASM parameters (based on Jørgen Sørensen's documentation)
+                # These offsets may vary by SFF version, but this is the common structure
+                ntr = ctab_data[10] if len(ctab_data) > 10 else 0  # Note Transposition Rule
+                ntt = ctab_data[11] if len(ctab_data) > 11 else 0  # Note Transposition Table
+                bass_ntt = ctab_data[12] if len(ctab_data) > 12 else 0  # Bass NTT
+                source_root = ctab_data[13] if len(ctab_data) > 13 else 0  # Source root (C=0)
+                source_chord = ctab_data[14] if len(ctab_data) > 14 else 0  # Source chord type
+                high_key = ctab_data[15] if len(ctab_data) > 15 else 127  # High key limit
+                note_low = ctab_data[16] if len(ctab_data) > 16 else 0  # Note low limit
+                note_high = ctab_data[17] if len(ctab_data) > 17 else 127  # Note high limit
+                retrigger_rule = ctab_data[18] if len(ctab_data) > 18 else 0  # Retrigger rule
+                
+                # Store remaining bytes for future use (Cntt references, etc.)
+                raw_params = ctab_data[19:] if len(ctab_data) > 19 else b''
                 
                 ctabs.append(Ctab(
                     name=name,
-                    channel=channel,
+                    channel=source_channel,
+                    ntr=ntr,
+                    ntt=ntt,
+                    bass_ntt=bass_ntt,
+                    source_root=source_root,
+                    source_chord=source_chord,
+                    high_key=high_key,
+                    note_low=note_low,
+                    note_high=note_high,
+                    retrigger_rule=retrigger_rule,
                     raw_params=raw_params
                 ))
             
             pos += 8 + ctab_length
             
         elif chunk_type == b'Cntt':
-            # Note transpose table - skip for now
+            # Note transpose table - parse the transposition table
             cntt_length = struct.unpack('>I', cseg_data[pos + 4:pos + 8])[0]
+            cntt_data = cseg_data[pos + 8:pos + 8 + cntt_length]
+            
+            # Store the full table data for interpretation
+            cntts.append(Cntt(table_data=cntt_data))
+            
             pos += 8 + cntt_length
             
         else:
             pos += 1
     
     if sections or ctabs:
-        return ChordSegment(sections=sections, ctabs=ctabs)
+        return ChordSegment(sections=sections, ctabs=ctabs, cntts=cntts)
     
     return None
 

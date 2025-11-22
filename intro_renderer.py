@@ -2,7 +2,7 @@
 Intro Renderer - Renders intro sections from Yamaha style files to MIDI
 
 This module provides the main functionality to render intro sections from
-Yamaha SFF1 style files with custom chord transformations.
+Yamaha SFF1 style files using CASM interpretation to match Yamaha keyboard behavior.
 """
 
 import argparse
@@ -11,7 +11,11 @@ from pathlib import Path
 import mido
 
 from style_parser import read_style_file, find_section_pattern
-from chord_engine import parse_chord, transform_notes_for_chord, transform_bass_notes
+from chord_engine import parse_chord
+from casm_interpreter import (
+    transpose_pattern_with_casm, get_ctab_for_channel,
+    CHORD_MAJOR, CHORD_MINOR
+)
 
 
 def render_intro(
@@ -191,25 +195,34 @@ def render_intro(
                                          value=ch_info.chorus,
                                          time=0))
         
-        # Transform notes to target chord
+        # Transform notes to target chord using CASM interpretation
         # Convert NoteEvent objects to tuples
         note_tuples = [(n.time, n.pitch, n.velocity, n.duration) for n in notes]
         
-        # Check if this is a bass channel - bass should only play root note
-        is_bass = False
-        if channel in pattern.channel_info:
-            is_bass = pattern.channel_info[channel].is_bass_channel()
+        # Determine target chord type
+        target_chord_type = CHORD_MINOR if target_chord.is_minor else CHORD_MAJOR
         
-        if is_bass:
-            # Bass channels: only play the root note of the chord
-            transformed_notes = transform_bass_notes(note_tuples, target_chord)
-            new_voicing = {}
-        else:
-            # Other channels: apply voice leading transformation
-            prev_voicing = {}
-            transformed_notes, new_voicing = transform_notes_for_chord(
-                note_tuples, prev_voicing, target_chord
+        # Try to use CASM Ctab if available
+        ctab = None
+        if style.chord_segments:
+            for cseg in style.chord_segments:
+                if section_name in cseg.sections:
+                    ctab = get_ctab_for_channel(cseg, channel)
+                    break
+        
+        if ctab:
+            # Use CASM transposition
+            transformed_notes = transpose_pattern_with_casm(
+                note_tuples,
+                ctab,
+                target_chord.root,
+                target_chord_type
             )
+        else:
+            # Fallback: simple transposition (no CASM data available)
+            # This simulates pressing the root key - transpose all notes by interval
+            interval = target_chord.root - 0  # Assuming source is C (0)
+            transformed_notes = [(t, p + interval, v, d) for t, p, v, d in note_tuples]
         
         # Sort by time and convert to MIDI messages
         transformed_notes.sort(key=lambda n: n[0])
