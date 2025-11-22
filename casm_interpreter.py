@@ -14,7 +14,7 @@ from style_parser import Ctab, Cntt, ChordSegment
 # NTR (Note Transposition Rule) modes
 NTR_ROOT_TRANS = 0  # Root Transpose - melodic transposition
 NTR_ROOT_FIXED = 1  # Root Fixed - keeps notes in range
-NTR_GUITAR = 2  # Guitar mode
+NTR_GUITAR = 2  # Guitar mode - guitar-specific voicing
 NTR_BYPASS = 3  # No transposition
 
 
@@ -112,6 +112,63 @@ def apply_ntr_root_fixed(note: int, source_root: int, target_root: int,
     return max(0, min(127, new_note))
 
 
+def apply_ntr_guitar(note: int, source_root: int, target_root: int, target_chord_tones: List[int]) -> int:
+    """
+    Apply Guitar NTR mode.
+    Guitar-specific voicing that considers chord tones and voice leading.
+    Maps notes to chord tones when appropriate for realistic guitar parts.
+    
+    Args:
+        note: Original MIDI note number
+        source_root: Source root note (0=C, 1=C#, etc.)
+        target_root: Target root note
+        target_chord_tones: List of chord tone offsets for target chord
+        
+    Returns:
+        Transformed note with guitar-style voicing
+    """
+    # Calculate base interval
+    interval = (target_root - source_root) % 12
+    
+    # Get note class of the original note
+    original_note_class = note % 12
+    original_octave = note // 12
+    
+    # Check if original note is close to a chord tone in the source
+    # (within 2 semitones suggests it was meant to be a chord tone or passing tone)
+    src_chord_tones = get_chord_tones(source_root, CHORD_MAJOR)  # Assume source is major
+    is_near_chord_tone = any(abs((original_note_class - (source_root + tone) % 12 + 6) % 12 - 6) <= 2 
+                             for tone in src_chord_tones)
+    
+    if is_near_chord_tone:
+        # Map to closest chord tone in target chord
+        target_tones_abs = [(target_root + tone) % 12 for tone in target_chord_tones]
+        
+        # Find closest chord tone
+        new_note_class = min(
+            target_tones_abs,
+            key=lambda t: min(abs(t - original_note_class), 
+                            abs(t - original_note_class + 12), 
+                            abs(t - original_note_class - 12))
+        )
+        
+        # Reconstruct pitch preserving octave as much as possible
+        new_pitch = original_octave * 12 + new_note_class
+        
+        # Adjust octave if too far from original (keep within 6 semitones if possible)
+        if abs(new_pitch - note) > 6:
+            if new_pitch > note:
+                new_pitch -= 12
+            else:
+                new_pitch += 12
+        
+        return max(0, min(127, new_pitch))
+    else:
+        # Non-chord tone: simple transpose by interval
+        new_pitch = note + interval
+        return max(0, min(127, new_pitch))
+
+
 def get_chord_tones(root: int, chord_type: int) -> List[int]:
     """
     Get the chord tones for a given root and chord type.
@@ -191,6 +248,11 @@ def apply_casm_transposition(
         # Root Fixed mode - keep in range
         return apply_ntr_root_fixed(note, src_root, target_root, 
                                      ctab.note_low, ctab.note_high)
+        
+    elif ctab.ntr == NTR_GUITAR:
+        # Guitar mode - guitar-specific voicing
+        target_chord_tones = get_chord_tones(target_root, target_chord_type)
+        return apply_ntr_guitar(note, src_root, target_root, target_chord_tones)
         
     elif ctab.ntr == NTR_BYPASS:
         # Bypass - no transposition

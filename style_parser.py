@@ -73,13 +73,14 @@ class ChordSegment:
     sections: List[str]  # List of section names from Sdec
     ctabs: List[Ctab]
     cntts: List[Cntt] = None  # Note transposition tables
+    range_type: str = "single"  # "single" for SFF1, "low"/"mid"/"high" for SFF2
     
     def __post_init__(self):
         if self.cntts is None:
             self.cntts = []
     
     def __repr__(self):
-        return f"ChordSegment(sections={self.sections}, ctabs={len(self.ctabs)}, cntts={len(self.cntts)})"
+        return f"ChordSegment(sections={self.sections}, ctabs={len(self.ctabs)}, cntts={len(self.cntts)}, range={self.range_type})"
 
 
 @dataclass
@@ -114,14 +115,37 @@ class Style:
     raw_bytes: bytes
     midi_data: mido.MidiFile
     chord_segments: List[ChordSegment]
+    format_version: str = "SFF1"  # "SFF1" or "SFF2"
     
     def __repr__(self):
-        return f"Style(tracks={len(self.midi_data.tracks)}, cseg={len(self.chord_segments)})"
+        return f"Style({self.format_version}, tracks={len(self.midi_data.tracks)}, cseg={len(self.chord_segments)})"
+
+
+def detect_sff_version(style_bytes: bytes) -> str:
+    """
+    Detect whether the style file is SFF1 or SFF2.
+    
+    Args:
+        style_bytes: Raw bytes of the style file
+        
+    Returns:
+        "SFF1" or "SFF2"
+    """
+    # Check for SFF2 markers
+    if b'SFF2' in style_bytes[:1000] or b'SFF GE' in style_bytes[:1000]:
+        return "SFF2"
+    
+    # Check for SFF1 marker
+    if b'SFF1' in style_bytes[:1000]:
+        return "SFF1"
+    
+    # Default to SFF1 for older files without explicit markers
+    return "SFF1"
 
 
 def read_style_file(path: str) -> Style:
     """
-    Read and parse a Yamaha SFF1 style file.
+    Read and parse a Yamaha SFF1/SFF2 style file.
     
     Args:
         path: Path to the .sty or .prs file
@@ -132,6 +156,9 @@ def read_style_file(path: str) -> Style:
     with open(path, 'rb') as f:
         raw_bytes = f.read()
     
+    # Detect format version
+    format_version = detect_sff_version(raw_bytes)
+    
     # Parse MIDI data
     try:
         midi_data = mido.MidiFile(path)
@@ -139,24 +166,30 @@ def read_style_file(path: str) -> Style:
         raise ValueError(f"Failed to parse MIDI data: {e}")
     
     # Parse CASM chunks
-    chord_segments = parse_casm(raw_bytes)
+    chord_segments = parse_casm(raw_bytes, format_version)
     
     return Style(
         raw_bytes=raw_bytes,
         midi_data=midi_data,
-        chord_segments=chord_segments
+        chord_segments=chord_segments,
+        format_version=format_version
     )
 
 
-def parse_casm(style_bytes: bytes) -> List[ChordSegment]:
+def parse_casm(style_bytes: bytes, format_version: str = "SFF1") -> List[ChordSegment]:
     """
     Parse CASM (Chord and Section Management) chunk from style file.
     
     Args:
         style_bytes: Raw bytes of the style file
+        format_version: "SFF1" or "SFF2"
         
     Returns:
         List of ChordSegment objects
+    
+    Note:
+        SFF2 files may have multiple CASM segments for low/mid/high ranges.
+        Currently treats all as single-range for compatibility.
     """
     chord_segments = []
     
@@ -171,17 +204,30 @@ def parse_casm(style_bytes: bytes) -> List[ChordSegment]:
     
     # Parse CSEGs within CASM
     pos = 0
+    cseg_count = 0
     while pos < len(casm_data) - 4:
         # Look for CSEG marker
         if casm_data[pos:pos + 4] == b'CSEG':
             cseg_length = struct.unpack('>I', casm_data[pos + 4:pos + 8])[0]
             cseg_data = casm_data[pos + 8:pos + 8 + cseg_length]
             
+            # Determine range type for SFF2 (low/mid/high)
+            range_type = "single"
+            if format_version == "SFF2":
+                # SFF2 has up to 3 CSEGs for low/mid/high ranges
+                if cseg_count == 0:
+                    range_type = "low"
+                elif cseg_count == 1:
+                    range_type = "mid"
+                elif cseg_count == 2:
+                    range_type = "high"
+            
             # Parse this CSEG
-            cseg = parse_cseg(cseg_data)
+            cseg = parse_cseg(cseg_data, range_type)
             if cseg:
                 chord_segments.append(cseg)
             
+            cseg_count += 1
             pos += 8 + cseg_length
         else:
             pos += 1
@@ -189,7 +235,7 @@ def parse_casm(style_bytes: bytes) -> List[ChordSegment]:
     return chord_segments
 
 
-def parse_cseg(cseg_data: bytes) -> Optional[ChordSegment]:
+def parse_cseg(cseg_data: bytes, range_type: str = "single") -> Optional[ChordSegment]:
     """
     Parse a single CSEG (Chord Segment).
     
@@ -279,7 +325,7 @@ def parse_cseg(cseg_data: bytes) -> Optional[ChordSegment]:
             pos += 1
     
     if sections or ctabs:
-        return ChordSegment(sections=sections, ctabs=ctabs, cntts=cntts)
+        return ChordSegment(sections=sections, ctabs=ctabs, cntts=cntts, range_type=range_type)
     
     return None
 
