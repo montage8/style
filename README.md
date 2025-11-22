@@ -6,6 +6,8 @@ A Python-based tool for parsing Yamaha SFF1 style files and rendering intro sect
 
 - Parse Yamaha SFF1 style files (.sty, .prs)
 - Extract CASM (Chord and Section Management) information
+- **Preserve instrument voices** with Program Change and Bank Select support
+- **Maintain channel settings** including Volume, Pan, Reverb, and Chorus
 - Render intro sections to MIDI files
 - Transform notes to different chords with voice leading
 - **Interactive mode** with step-by-step Korean/English prompts
@@ -84,6 +86,8 @@ Handles parsing of Yamaha SFF1 style files:
 - `read_style_file()`: Reads and parses a style file
 - `parse_casm()`: Parses CASM (Chord and Section Management) chunks
 - `find_section_pattern()`: Extracts MIDI patterns for specific sections
+- **Captures Program Change and Bank Select events** for instrument voices
+- **Extracts control changes** (Volume, Pan, Reverb, Chorus) from original style
 
 ### chord_engine.py
 
@@ -96,6 +100,7 @@ Manages chord transformations and voice leading:
 
 Main application that ties everything together:
 - `render_intro()`: Renders intro sections to MIDI files
+- **Applies Program Change, Bank Select, and control changes** to output MIDI
 - CLI interface for user interaction
 
 ## Technical Details
@@ -108,6 +113,16 @@ Yamaha SFF1 files are based on Standard MIDI File (SMF) format with additional c
   - **Sdec**: Section declarations (e.g., "Intro A", "Main A")
   - **Ctab**: Channel tables (instrument assignments)
   - **Cntt**: Note transpose tables
+
+### Instrument and Voice Handling
+
+The parser now properly handles Yamaha-specific voice selection:
+- **Program Change**: Selects the instrument/voice (0-127)
+- **Bank Select MSB** (CC#0): Selects the bank group (0=GM, 63=Yamaha Preset, etc.)
+- **Bank Select LSB** (CC#32): Selects the bank variation within the group
+- **Control Changes**: Volume (CC#7), Pan (CC#10), Reverb (CC#91), Chorus (CC#93)
+
+This ensures that rendered MIDI files sound like the original Yamaha styles with correct instruments and effects.
 
 ### Voice Leading Algorithm
 

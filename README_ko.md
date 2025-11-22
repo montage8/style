@@ -30,6 +30,8 @@
 
 - ✅ SFF1 스타일 파일 파싱 (.sty, .prs)
 - ✅ 표준 MIDI 파일도 처리 가능
+- ✅ **악기/보이스 보존** - Program Change 및 Bank Select 지원
+- ✅ **채널 설정 유지** - Volume, Pan, Reverb, Chorus 보존
 - ✅ 섹션 자동 감지 (Intro A, Intro B, Main A 등)
 - ✅ 장조/단조 코드 변환
 - ✅ 보이스 리딩 알고리즘으로 부드러운 화성 진행
@@ -108,6 +110,16 @@ python intro_renderer.py --style mystyle.sty --section "Intro C" --chord "F#" --
   - **Sdec**: 섹션 선언 (예: "Intro A", "Main A")
   - **Ctab**: 채널 테이블 (악기 할당)
   - **Cntt**: 노트 트랜스포즈 테이블
+
+### 악기 및 보이스 처리
+
+파서는 이제 야마하 보이스 선택을 정확하게 처리합니다:
+- **Program Change**: 악기/보이스 선택 (0-127)
+- **Bank Select MSB** (CC#0): 뱅크 그룹 선택 (0=GM, 63=야마하 프리셋 등)
+- **Bank Select LSB** (CC#32): 그룹 내 뱅크 변형 선택
+- **Control Changes**: Volume (CC#7), Pan (CC#10), Reverb (CC#91), Chorus (CC#93)
+
+이를 통해 렌더링된 MIDI 파일이 올바른 악기와 이펙트로 원래 야마하 스타일처럼 들립니다.
 
 ### 보이스 리딩 알고리즘
 
