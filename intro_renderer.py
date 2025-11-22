@@ -132,6 +132,65 @@ def render_intro(
                                       name=f'Channel {channel}',
                                       time=0))
         
+        # Add channel initialization (Bank Select, Program Change, etc.)
+        if channel in pattern.channel_info:
+            ch_info = pattern.channel_info[channel]
+            
+            # Bank Select MSB (CC#0)
+            if ch_info.bank_msb is not None:
+                track.append(mido.Message('control_change',
+                                         channel=channel,
+                                         control=0,
+                                         value=ch_info.bank_msb,
+                                         time=0))
+            
+            # Bank Select LSB (CC#32)
+            if ch_info.bank_lsb is not None:
+                track.append(mido.Message('control_change',
+                                         channel=channel,
+                                         control=32,
+                                         value=ch_info.bank_lsb,
+                                         time=0))
+            
+            # Program Change
+            if ch_info.program is not None:
+                track.append(mido.Message('program_change',
+                                         channel=channel,
+                                         program=ch_info.program,
+                                         time=0))
+            
+            # Volume (CC#7)
+            if ch_info.volume is not None:
+                track.append(mido.Message('control_change',
+                                         channel=channel,
+                                         control=7,
+                                         value=ch_info.volume,
+                                         time=0))
+            
+            # Pan (CC#10)
+            if ch_info.pan is not None:
+                track.append(mido.Message('control_change',
+                                         channel=channel,
+                                         control=10,
+                                         value=ch_info.pan,
+                                         time=0))
+            
+            # Reverb (CC#91)
+            if ch_info.reverb is not None:
+                track.append(mido.Message('control_change',
+                                         channel=channel,
+                                         control=91,
+                                         value=ch_info.reverb,
+                                         time=0))
+            
+            # Chorus (CC#93)
+            if ch_info.chorus is not None:
+                track.append(mido.Message('control_change',
+                                         channel=channel,
+                                         control=93,
+                                         value=ch_info.chorus,
+                                         time=0))
+        
         # Transform notes to target chord
         # Convert NoteEvent objects to tuples
         note_tuples = [(n.time, n.pitch, n.velocity, n.duration) for n in notes]

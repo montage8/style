@@ -12,6 +12,19 @@ import mido
 
 
 @dataclass
+class ChannelInfo:
+    """Represents channel configuration from style file"""
+    channel: int  # MIDI channel (0-15)
+    bank_msb: Optional[int] = None  # Bank Select MSB (CC#0)
+    bank_lsb: Optional[int] = None  # Bank Select LSB (CC#32)
+    program: Optional[int] = None  # Program Change (0-127)
+    volume: Optional[int] = None  # Volume (CC#7)
+    pan: Optional[int] = None  # Pan (CC#10)
+    reverb: Optional[int] = None  # Reverb (CC#91)
+    chorus: Optional[int] = None  # Chorus (CC#93)
+
+
+@dataclass
 class Ctab:
     """Represents a Ctab (Channel Table) entry in CASM"""
     name: str
@@ -50,6 +63,7 @@ class IntroPattern:
     tempo: int  # BPM
     time_signature: Tuple[int, int]  # (numerator, denominator)
     notes_by_channel: Dict[int, List[NoteEvent]]  # channel -> list of note events
+    channel_info: Dict[int, ChannelInfo]  # channel -> channel configuration
     
     def __repr__(self):
         channels = list(self.notes_by_channel.keys())
@@ -241,8 +255,9 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
     if not section_tracks:
         section_tracks = list(range(1, len(midi.tracks)))
     
-    # Parse note events from relevant tracks
+    # Parse note events and channel info from relevant tracks
     notes_by_channel: Dict[int, List[NoteEvent]] = {}
+    channel_info: Dict[int, ChannelInfo] = {}
     max_time = 0
     
     for track_idx in section_tracks:
@@ -260,6 +275,30 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
             # Extract time signature
             elif msg.type == 'time_signature':
                 time_signature = (msg.numerator, msg.denominator)
+            
+            # Capture program change
+            elif msg.type == 'program_change':
+                if msg.channel not in channel_info:
+                    channel_info[msg.channel] = ChannelInfo(channel=msg.channel)
+                channel_info[msg.channel].program = msg.program
+            
+            # Capture control changes (Bank Select MSB/LSB, Volume, Pan, etc.)
+            elif msg.type == 'control_change':
+                if msg.channel not in channel_info:
+                    channel_info[msg.channel] = ChannelInfo(channel=msg.channel)
+                
+                if msg.control == 0:  # Bank Select MSB
+                    channel_info[msg.channel].bank_msb = msg.value
+                elif msg.control == 32:  # Bank Select LSB
+                    channel_info[msg.channel].bank_lsb = msg.value
+                elif msg.control == 7:  # Volume
+                    channel_info[msg.channel].volume = msg.value
+                elif msg.control == 10:  # Pan
+                    channel_info[msg.channel].pan = msg.value
+                elif msg.control == 91:  # Reverb
+                    channel_info[msg.channel].reverb = msg.value
+                elif msg.control == 93:  # Chorus
+                    channel_info[msg.channel].chorus = msg.value
             
             # Note on
             elif msg.type == 'note_on' and msg.velocity > 0:
@@ -300,6 +339,28 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
                     tempo = mido.tempo2bpm(msg.tempo)
                 elif msg.type == 'time_signature':
                     time_signature = (msg.numerator, msg.denominator)
+                # Capture program change
+                elif msg.type == 'program_change':
+                    if msg.channel not in channel_info:
+                        channel_info[msg.channel] = ChannelInfo(channel=msg.channel)
+                    channel_info[msg.channel].program = msg.program
+                # Capture control changes
+                elif msg.type == 'control_change':
+                    if msg.channel not in channel_info:
+                        channel_info[msg.channel] = ChannelInfo(channel=msg.channel)
+                    
+                    if msg.control == 0:  # Bank Select MSB
+                        channel_info[msg.channel].bank_msb = msg.value
+                    elif msg.control == 32:  # Bank Select LSB
+                        channel_info[msg.channel].bank_lsb = msg.value
+                    elif msg.control == 7:  # Volume
+                        channel_info[msg.channel].volume = msg.value
+                    elif msg.control == 10:  # Pan
+                        channel_info[msg.channel].pan = msg.value
+                    elif msg.control == 91:  # Reverb
+                        channel_info[msg.channel].reverb = msg.value
+                    elif msg.control == 93:  # Chorus
+                        channel_info[msg.channel].chorus = msg.value
                 elif msg.type == 'note_on' and msg.velocity > 0:
                     key = (msg.channel, msg.note)
                     active_notes[key] = (current_time, msg.velocity)
@@ -331,5 +392,6 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
         length_ticks=length_ticks,
         tempo=int(tempo),
         time_signature=time_signature,
-        notes_by_channel=notes_by_channel
+        notes_by_channel=notes_by_channel,
+        channel_info=channel_info
     )
