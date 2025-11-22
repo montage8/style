@@ -19,7 +19,8 @@ def render_intro(
     section_name: str,
     chord_symbol: str,
     quality: str,
-    out_path: str
+    out_path: str,
+    korean: bool = False
 ) -> None:
     """
     Render an intro section from a style file to a MIDI file.
@@ -30,38 +31,70 @@ def render_intro(
         chord_symbol: Root note of target chord (e.g., "C", "F#", "Eb")
         quality: Chord quality ("major" or "minor")
         out_path: Output MIDI file path
+        korean: Whether to use Korean messages
     """
-    print(f"Loading style file: {style_path}")
+    if korean:
+        print(f"스타일 파일 로딩 중: {style_path}")
+    else:
+        print(f"Loading style file: {style_path}")
     
     # Load and parse style file
     try:
         style = read_style_file(style_path)
-        print(f"✓ Style loaded: {len(style.midi_data.tracks)} tracks, "
-              f"{len(style.chord_segments)} chord segments")
+        if korean:
+            print(f"✓ 스타일 로드 완료: {len(style.midi_data.tracks)}개 트랙, "
+                  f"{len(style.chord_segments)}개 코드 세그먼트")
+        else:
+            print(f"✓ Style loaded: {len(style.midi_data.tracks)} tracks, "
+                  f"{len(style.chord_segments)} chord segments")
     except Exception as e:
-        print(f"✗ Error loading style file: {e}")
+        if korean:
+            print(f"✗ 스타일 파일 로딩 오류: {e}")
+        else:
+            print(f"✗ Error loading style file: {e}")
         sys.exit(1)
     
     # Find the requested section
-    print(f"Finding section: {section_name}")
+    if korean:
+        print(f"섹션 찾는 중: {section_name}")
+    else:
+        print(f"Finding section: {section_name}")
     try:
         pattern = find_section_pattern(style, section_name)
-        print(f"✓ Section found: {pattern}")
+        if korean:
+            print(f"✓ 섹션 발견: {pattern}")
+        else:
+            print(f"✓ Section found: {pattern}")
     except Exception as e:
-        print(f"✗ Error finding section: {e}")
+        if korean:
+            print(f"✗ 섹션 찾기 오류: {e}")
+        else:
+            print(f"✗ Error finding section: {e}")
         sys.exit(1)
     
     # Parse target chord
-    print(f"Parsing chord: {chord_symbol} {quality}")
+    if korean:
+        print(f"코드 파싱 중: {chord_symbol} {quality}")
+    else:
+        print(f"Parsing chord: {chord_symbol} {quality}")
     try:
         target_chord = parse_chord(chord_symbol, quality)
-        print(f"✓ Chord parsed: {target_chord}")
+        if korean:
+            print(f"✓ 코드 파싱 완료: {target_chord}")
+        else:
+            print(f"✓ Chord parsed: {target_chord}")
     except Exception as e:
-        print(f"✗ Error parsing chord: {e}")
+        if korean:
+            print(f"✗ 코드 파싱 오류: {e}")
+        else:
+            print(f"✗ Error parsing chord: {e}")
         sys.exit(1)
     
     # Create output MIDI file
-    print(f"Creating MIDI file...")
+    if korean:
+        print(f"MIDI 파일 생성 중...")
+    else:
+        print(f"Creating MIDI file...")
     midi_file = mido.MidiFile(ticks_per_beat=pattern.ticks_per_beat)
     
     # Add tempo track
@@ -158,23 +191,141 @@ def render_intro(
                                        time=pattern.length_ticks))
     
     # Save MIDI file
-    print(f"Saving MIDI file: {out_path}")
+    if korean:
+        print(f"MIDI 파일 저장 중: {out_path}")
+    else:
+        print(f"Saving MIDI file: {out_path}")
     midi_file.save(out_path)
-    print(f"✓ MIDI file saved successfully!")
-    print(f"  Tempo: {pattern.tempo} BPM")
-    print(f"  Time signature: {pattern.time_signature[0]}/{pattern.time_signature[1]}")
-    print(f"  Channels: {list(pattern.notes_by_channel.keys())}")
-    print(f"  Total events: {total_notes}")
+    if korean:
+        print(f"✓ MIDI 파일 저장 완료!")
+        print(f"  템포: {pattern.tempo} BPM")
+        print(f"  박자: {pattern.time_signature[0]}/{pattern.time_signature[1]}")
+        print(f"  채널: {list(pattern.notes_by_channel.keys())}")
+        print(f"  총 이벤트: {total_notes}")
+    else:
+        print(f"✓ MIDI file saved successfully!")
+        print(f"  Tempo: {pattern.tempo} BPM")
+        print(f"  Time signature: {pattern.time_signature[0]}/{pattern.time_signature[1]}")
+        print(f"  Channels: {list(pattern.notes_by_channel.keys())}")
+        print(f"  Total events: {total_notes}")
+
+
+def interactive_mode():
+    """Interactive mode with step-by-step prompts in Korean"""
+    print("=" * 60)
+    print("야마하 스타일 파일 인트로 렌더러")
+    print("Yamaha Style File Intro Renderer")
+    print("=" * 60)
+    print()
+    
+    # Step 1: Get style file path
+    while True:
+        style_path = input("1. 스타일 파일 경로를 입력하세요 (.sty, .prs, .mid)\n   Enter style file path: ").strip()
+        if not style_path:
+            print("   ✗ 파일 경로를 입력해주세요.\n")
+            continue
+        if not Path(style_path).exists():
+            print(f"   ✗ 파일을 찾을 수 없습니다: {style_path}\n")
+            continue
+        print(f"   ✓ 파일 확인: {style_path}\n")
+        break
+    
+    # Step 2: Get section name
+    print("2. 렌더링할 섹션을 입력하세요")
+    print("   예시: Intro A, Intro B, Intro C, Main A, Main B")
+    section_name = input("   Enter section name: ").strip()
+    if not section_name:
+        section_name = "Intro A"
+        print(f"   ✓ 기본값 사용: {section_name}\n")
+    else:
+        print(f"   ✓ 섹션 선택: {section_name}\n")
+    
+    # Step 3: Get chord root
+    print("3. 코드 루트를 입력하세요")
+    print("   예시: C, D, E, F, G, A, B, C#, Eb, F#, Bb")
+    chord_symbol = input("   Enter chord root: ").strip()
+    if not chord_symbol:
+        chord_symbol = "C"
+        print(f"   ✓ 기본값 사용: {chord_symbol}\n")
+    else:
+        print(f"   ✓ 코드 루트: {chord_symbol}\n")
+    
+    # Step 4: Get chord quality
+    print("4. 코드 품질을 선택하세요")
+    print("   1) major (메이저)")
+    print("   2) minor (마이너)")
+    while True:
+        quality_input = input("   선택 (1 또는 2): ").strip()
+        if quality_input == "1" or quality_input.lower() == "major":
+            quality = "major"
+            print(f"   ✓ 선택: major (메이저)\n")
+            break
+        elif quality_input == "2" or quality_input.lower() == "minor":
+            quality = "minor"
+            print(f"   ✓ 선택: minor (마이너)\n")
+            break
+        elif not quality_input:
+            quality = "major"
+            print(f"   ✓ 기본값 사용: major (메이저)\n")
+            break
+        else:
+            print("   ✗ 1 또는 2를 입력해주세요.\n")
+    
+    # Step 5: Get output file path
+    print("5. 출력 MIDI 파일 경로를 입력하세요")
+    out_path = input("   Enter output file path: ").strip()
+    if not out_path:
+        out_path = f"intro_{chord_symbol}_{quality}.mid"
+        print(f"   ✓ 기본값 사용: {out_path}\n")
+    else:
+        print(f"   ✓ 출력 파일: {out_path}\n")
+    
+    # Confirm and render
+    print("=" * 60)
+    print("렌더링 설정 확인:")
+    print(f"  스타일 파일: {style_path}")
+    print(f"  섹션: {section_name}")
+    print(f"  코드: {chord_symbol} {quality}")
+    print(f"  출력 파일: {out_path}")
+    print("=" * 60)
+    
+    confirm = input("\n렌더링을 시작하시겠습니까? (y/n): ").strip().lower()
+    if confirm not in ['y', 'yes', '']:
+        print("렌더링이 취소되었습니다.")
+        return
+    
+    print()
+    print("=" * 60)
+    print("렌더링 시작...")
+    print("=" * 60)
+    print()
+    
+    # Render
+    render_intro(style_path, section_name, chord_symbol, quality, out_path, korean=True)
+    
+    print()
+    print("=" * 60)
+    print("렌더링 완료!")
+    print("=" * 60)
 
 
 def main():
     """Main CLI entry point"""
+    # Check if any arguments were provided
+    if len(sys.argv) == 1:
+        # No arguments - run interactive mode
+        interactive_mode()
+        return
+    
     parser = argparse.ArgumentParser(
         description='Render intro sections from Yamaha SFF1 style files to MIDI',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Render Intro A in C major
+  # Interactive mode (no arguments)
+  python intro_renderer.py
+  
+  # Command-line mode
   python intro_renderer.py --style mystyle.sty --section "Intro A" --chord C --quality major --out intro_C.mid
   
   # Render Intro B in A minor
@@ -185,23 +336,27 @@ Examples:
         """
     )
     
-    parser.add_argument('--style', required=True,
+    parser.add_argument('--style', required=False,
                        help='Path to Yamaha style file (.sty, .prs)')
     
-    parser.add_argument('--section', required=True,
+    parser.add_argument('--section', required=False,
                        help='Section name to render (e.g., "Intro A", "Intro B", "Intro C")')
     
-    parser.add_argument('--chord', required=True,
+    parser.add_argument('--chord', required=False,
                        help='Chord root (e.g., C, F#, Eb, A)')
     
-    parser.add_argument('--quality', required=True,
+    parser.add_argument('--quality', required=False,
                        choices=['major', 'minor'],
                        help='Chord quality (major or minor)')
     
-    parser.add_argument('--out', required=True,
+    parser.add_argument('--out', required=False,
                        help='Output MIDI file path')
     
     args = parser.parse_args()
+    
+    # If any required arguments are missing, show error
+    if not all([args.style, args.section, args.chord, args.quality, args.out]):
+        parser.error("All arguments (--style, --section, --chord, --quality, --out) are required in command-line mode")
     
     # Validate input file exists
     if not Path(args.style).exists():

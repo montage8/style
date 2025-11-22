@@ -8,7 +8,8 @@ A Python-based tool for parsing Yamaha SFF1 style files and rendering intro sect
 - Extract CASM (Chord and Section Management) information
 - Render intro sections to MIDI files
 - Transform notes to different chords with voice leading
-- Command-line interface for easy usage
+- **Interactive mode** with step-by-step Korean/English prompts
+- Command-line interface for scripting and automation
 
 ## Installation
 
@@ -21,9 +22,26 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Basic Usage
+### Interactive Mode (Recommended)
 
-Render an intro section from a style file:
+Simply run the program without any arguments for a step-by-step interactive experience:
+
+```bash
+python intro_renderer.py
+```
+
+The program will guide you through:
+1. Selecting the style file
+2. Choosing the section to render (Intro A, Intro B, etc.)
+3. Specifying the chord root (C, D, E, F, G, A, B, with sharps/flats)
+4. Selecting major or minor quality
+5. Setting the output file name
+
+All prompts are displayed in both Korean and English for accessibility.
+
+### Command-line Mode
+
+For automation or scripting, you can provide all parameters as command-line arguments:
 
 ```bash
 python intro_renderer.py --style mystyle.sty --section "Intro A" --chord C --quality major --out intro_C.mid
@@ -40,6 +58,9 @@ python intro_renderer.py --style mystyle.sty --section "Intro A" --chord C --qua
 ### Examples
 
 ```bash
+# Interactive mode - easiest for beginners
+python intro_renderer.py
+
 # Render Intro A in C major
 python intro_renderer.py --style PubPiano.S549.sty --section "Intro A" --chord C --quality major --out intro_C.mid
 

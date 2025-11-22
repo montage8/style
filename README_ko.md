@@ -33,7 +33,9 @@
 - ✅ 섹션 자동 감지 (Intro A, Intro B, Main A 등)
 - ✅ 장조/단조 코드 변환
 - ✅ 보이스 리딩 알고리즘으로 부드러운 화성 진행
+- ✅ **대화형 모드** - 단계별 한글/영문 안내
 - ✅ 스크린 리더 친화적인 CLI 인터페이스
+- ✅ 명령줄 모드로 스크립팅/자동화 지원
 - ✅ 모든 출력은 텍스트 기반
 
 ## 사용 방법
@@ -44,7 +46,26 @@
 pip install -r requirements.txt
 ```
 
-### 기본 사용법
+### 대화형 모드 (권장)
+
+인자 없이 프로그램을 실행하면 단계별 안내를 받을 수 있습니다:
+
+```bash
+python intro_renderer.py
+```
+
+프로그램이 다음 단계를 안내합니다:
+1. 스타일 파일 선택
+2. 렌더링할 섹션 선택 (Intro A, Intro B 등)
+3. 코드 루트 지정 (C, D, E, F, G, A, B, 샵/플랫 포함)
+4. 장조/단조 선택
+5. 출력 파일 이름 설정
+
+모든 안내 메시지는 한글과 영문으로 표시되어 접근성이 뛰어납니다.
+
+### 명령줄 모드
+
+자동화나 스크립팅을 위해 모든 매개변수를 명령줄 인자로 제공할 수 있습니다:
 
 ```bash
 python intro_renderer.py --style 스타일파일.sty --section "Intro A" --chord C --quality major --out intro_C.mid
@@ -61,6 +82,9 @@ python intro_renderer.py --style 스타일파일.sty --section "Intro A" --chord
 ### 사용 예시
 
 ```bash
+# 대화형 모드 - 초보자에게 가장 쉬움
+python intro_renderer.py
+
 # C 메이저로 Intro A 렌더링
 python intro_renderer.py --style PubPiano.S549.sty --section "Intro A" --chord C --quality major --out intro_C.mid
 
