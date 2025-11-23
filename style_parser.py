@@ -368,6 +368,7 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
     # Yamaha style files use marker/text events to denote sections
     section_start_time = None
     section_end_time = None
+    found_end = False  # Flag to break outer loop
     
     for track in midi.tracks:
         current_time = 0
@@ -395,22 +396,25 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
                 # We found a different section marker after ours, so this is the end
                 section_end_time = current_time
                 print(f"DEBUG: Section '{section_name}' ends at time {current_time}")
+                found_end = True
                 break
+        
+        # Exit outer loop if we found the end
+        if found_end:
+            break
     
     # If we didn't find explicit markers, use the whole file (fallback)
     if section_start_time is None:
         section_start_time = 0
         print(f"DEBUG: No marker found for '{section_name}', using time 0")
     
-    # If no end marker, use max time from all notes
+    # If no end marker, estimate reasonable section length (8 bars)
     if section_end_time is None:
-        # Calculate max time from all tracks
-        max_time = 0
-        for track in midi.tracks:
-            track_time = sum(msg.time for msg in track)
-            max_time = max(max_time, track_time)
-        section_end_time = max_time
-        print(f"DEBUG: No end marker, using max time {section_end_time}")
+        # Typical intro/main sections are 4-8 bars
+        # Assume 4/4 time, 8 bars = 8 * 4 * ticks_per_beat ticks
+        estimated_length = 8 * 4 * ticks_per_beat
+        section_end_time = section_start_time + estimated_length
+        print(f"DEBUG: No end marker, estimating section length as 8 bars ({estimated_length} ticks), end time = {section_end_time}")
     
     # STEP 2: Extract notes ONLY within the section time range
     section_tracks = list(range(1, len(midi.tracks)))
@@ -489,6 +493,13 @@ def find_section_pattern(style: Style, section_name: str) -> IntroPattern:
                         notes_by_channel[msg.channel].append(note_event)
                         
                         max_time = max(max_time, start_time - section_start_time + duration)
+    
+    # Print debug info about extraction
+    total_notes_extracted = sum(len(notes) for notes in notes_by_channel.values())
+    print(f"DEBUG: Extracted {total_notes_extracted} total notes from section '{section_name}'")
+    print(f"DEBUG: Time range: [{section_start_time}, {section_end_time}) = {section_end_time - section_start_time} ticks")
+    for ch, notes in notes_by_channel.items():
+        print(f"DEBUG: Channel {ch}: {len(notes)} notes")
     
     # Length is the section duration
     section_length = section_end_time - section_start_time if section_end_time > section_start_time else max_time
